@@ -1,141 +1,88 @@
-import sqlite3
 import json
-from typing import List, Dict, Any
+from contextlib import contextmanager
+from datetime import datetime
+import sqlite3
+from typing import Dict, List, Optional
+from config import config
+import joblib
 
-DB_FILE = "db/ml_dashboard.db"  # Path to your SQLite database file
-
-
-# Connect to the database
+@contextmanager
 def get_connection():
-    return sqlite3.connect(DB_FILE)
+    conn = sqlite3.connect(config.db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        yield conn
+    finally:
+        conn.close()
 
-# Insert metrics
-def insert_metrics(model_type: str, period: str, rmse: float, mae: float, mse: float, accuracy: float):
-    conn = get_connection()
-    cursor = conn.cursor()
+class DatabaseManager:
+    @staticmethod
+    def get_latest_date(symbol: str) -> Optional[datetime]:
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT MAX(date) 
+                FROM historical_data 
+                WHERE symbol = ?
+            """, (symbol,))
+            result = cursor.fetchone()[0]
+            return datetime.strptime(result, "%Y-%m-%d") if result else None
 
-    cursor.execute("""
-        INSERT INTO metrics (model_type, period, rmse, mae, mse, accuracy)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """, (model_type, period, rmse, mae, mse, accuracy))
+    @staticmethod
+    def save_historical_data(symbol: str, data: Dict[str, Dict[str, float]]):
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            for date, values in data.items():
+                cursor.execute("""
+                    INSERT OR IGNORE INTO historical_data 
+                    (symbol, date, open, high, low, close, volume)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (symbol, date, 
+                      values["Open"], values["High"], 
+                      values["Low"], values["Close"], values["Volume"]))
+            conn.commit()
 
-    conn.commit()
-    conn.close()
+    @staticmethod
+    def fetch_historical_data(symbol: str) -> Dict[str, Dict[str, float]]:
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT date, open, high, low, close, volume
+                FROM historical_data
+                WHERE symbol = ?
+                ORDER BY date ASC
+            """, (symbol,))
+            return {
+                row["date"]: {
+                    "Open": row["open"],
+                    "High": row["high"],
+                    "Low": row["low"],
+                    "Close": row["close"],
+                    "Volume": row["volume"],
+                }
+                for row in cursor.fetchall()
+            }
 
+    @staticmethod
+    def save_model_metrics(symbol: str, metrics: Dict):
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO metrics 
+                (symbol, model_type, mse, rmse, mae, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (symbol, metrics.get("model_type"), 
+                  metrics["mse"], metrics["rmse"], 
+                  metrics["mae"], datetime.now()))
+            conn.commit()
 
-# Insert predictions
-def insert_predictions(symbol: str, period: str, predictions: Dict[str, float]):
-    conn = get_connection()
-    cursor = conn.cursor()
+class ModelStore:
+    @staticmethod
+    def save_model(symbol: str, model):
+        config.model_store_path.mkdir(exist_ok=True)
+        joblib.dump(model, config.model_store_path / f"{symbol}.joblib")
 
-    predictions_json = json.dumps(predictions)  # Convert predictions to JSON
-    cursor.execute("""
-        INSERT INTO predictions (symbol, period, predictions)
-        VALUES (?, ?, ?)
-    """, (symbol, period, predictions_json))
-
-    conn.commit()
-    conn.close()
-
-# Save historical data
-def save_historical_data(symbol: str, data: Dict[str, Dict[str, float]]):
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-
-    for date, values in data.items():
-        cursor.execute("""
-            INSERT OR IGNORE INTO historical_data (symbol, date, open, high, low, close, volume)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (symbol, date, values["Open"], values["High"], values["Low"], values["Close"], values["Volume"]))
-
-    conn.commit()
-    conn.close()
-
-# Fetch metrics
-def fetch_metrics() -> List[Dict[str, Any]]:
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    cursor.execute("SELECT model_type, period, rmse, mae, mse, accuracy, created_at FROM metrics")
-    rows = cursor.fetchall()
-
-    conn.close()
-
-    # Convert rows into a list of dictionaries
-    return [
-        {
-            "model_type": row[0],
-            "period": row[1],
-            "rmse": row[2],
-            "mae": row[3],
-            "mse": row[4],
-            "accuracy": row[5],
-            "created_at": row[6],
-        }
-        for row in rows
-    ]
-
-# Get historical stock data from db
-def fetch_historical_data(symbol: str, start_date: str, end_date: str):
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-
-    cursor.execute("""
-        SELECT date, open, high, low, close, volume
-        FROM historical_data
-        WHERE symbol = ? AND date BETWEEN ? AND ?
-        ORDER BY date ASC
-    """, (symbol, start_date, end_date))
-
-    rows = cursor.fetchall()
-    conn.close()
-
-    # Convert to dictionary format
-    return {
-        row[0]: {
-            "Open": row[1],
-            "High": row[2],
-            "Low": row[3],
-            "Close": row[4],
-            "Volume": row[5],
-        }
-        for row in rows
-    }
-
-# Fetch predictions by symbol
-def fetch_predictions(symbol: str) -> List[Dict[str, Any]]:
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    cursor.execute("""
-        SELECT symbol, period, predictions, created_at
-        FROM predictions
-        WHERE symbol = ?
-    """, (symbol,))
-
-    rows = cursor.fetchall()
-    conn.close()
-
-    # Convert rows into a list of dictionaries
-    return [
-        {
-            "symbol": row[0],
-            "period": row[1],
-            "predictions": json.loads(row[2]),  # Convert JSON string back to dictionary
-            "created_at": row[3],
-        }
-        for row in rows
-    ]
-
-# Get the latest data for a symbol
-def get_latest_date(symbol: str) -> str:
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT MAX(date) 
-        FROM historical_data 
-        WHERE symbol = ?
-    """, (symbol,))
-    result = cursor.fetchone()[0]
-    conn.close()
-    return result or ""
+    @staticmethod
+    def load_model(symbol: str):
+        model_path = config.model_store_path / f"{symbol}.joblib"
+        return joblib.load(model_path) if model_path.exists() else None

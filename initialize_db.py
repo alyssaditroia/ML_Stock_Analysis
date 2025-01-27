@@ -1,4 +1,6 @@
 import sqlite3
+from pathlib import Path
+from config import config
 
 # To initialize the database manually run: python3 initialize_db.py
 # Verify db using SQLite shell: sqlite3 db/ml_dashboard.db
@@ -6,55 +8,51 @@ import sqlite3
 # To show db schema: .schema metrics
 # To quit: .exit
 
-DB_FILE = "db/ml_dashboard.db"  # Path to SQLite database file
-
+# initialize_db.py
+# run: python initialize_db.py
 def initialize_db():
-    conn = sqlite3.connect(DB_FILE)  # Connect to the database (creates the file if it doesn't exist)
-    cursor = conn.cursor()
-
-    # Create `metrics` table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS metrics (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            model_type TEXT NOT NULL,
-            period TEXT NOT NULL,
-            rmse REAL,
-            mae REAL,
-            mse REAL,
-            accuracy REAL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
+    Path(config.db_path.parent).mkdir(parents=True, exist_ok=True)
     
-    # Create historical_data table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS historical_data (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            symbol TEXT,
-            date TEXT,
-            open REAL,
-            high REAL,
-            low REAL,
-            close REAL,
-            volume INTEGER,
-            UNIQUE(symbol, date)  -- Prevent duplicate entries for the same symbol and date
-        )
-    """)
+    with sqlite3.connect(config.db_path) as conn:
+        cursor = conn.cursor()
 
-    # Create `predictions` table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS predictions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            symbol TEXT NOT NULL,
-            period TEXT NOT NULL,
-            predictions TEXT NOT NULL, -- JSON string of predictions
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
+        # Create tables with improved schema
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS historical_data (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                symbol TEXT NOT NULL,
+                date TEXT NOT NULL,
+                open REAL NOT NULL,
+                high REAL NOT NULL,
+                low REAL NOT NULL,
+                close REAL NOT NULL,
+                volume INTEGER NOT NULL,
+                UNIQUE(symbol, date)
+            )
+        """)
 
-    print("Database and tables created successfully.")
-    conn.commit()
-    conn.close()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS metrics (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                symbol TEXT NOT NULL,
+                model_type TEXT NOT NULL,
+                mse REAL NOT NULL,
+                rmse REAL NOT NULL,
+                mae REAL NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS predictions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                symbol TEXT NOT NULL,
+                predictions TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        print("Database initialized successfully")
 
 if __name__ == "__main__":
     initialize_db()

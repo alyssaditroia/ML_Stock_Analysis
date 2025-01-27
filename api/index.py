@@ -8,7 +8,7 @@ from sklearn.metrics import mean_squared_error
 from datetime import datetime, timedelta
 from api.models import StockPredictor
 from Stock_Analysis_ML.api.database import get_connection
-from api.database import get_latest_date, insert_metrics, fetch_metrics, save_historical_data
+from api.database import fetch_historical_data, get_latest_date, insert_metrics, fetch_metrics, save_historical_data
 from initialize_db import initialize_db
 from datetime import datetime, timedelta
 # export PYTHONPATH=$PYTHONPATH:/Users/alyssaditroia/Desktop/Stock_Analysis/Stock_Analysis_ML
