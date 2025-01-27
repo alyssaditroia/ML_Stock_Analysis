@@ -14,7 +14,6 @@ import {
     Legend,
 } from "chart.js";
 
-// Register required components
 ChartJS.register(
     CategoryScale,
     LinearScale,
@@ -24,11 +23,28 @@ ChartJS.register(
     Tooltip,
     Legend
 );
+type PredictionData = {
+    symbol: string;
+    model: string;
+    period: string;
+    metrics: {
+        mse: number;
+        rmse: number;
+        mae: number;
+    };
+    predictions: Record<string, number>;
+    training_data?: {
+        actual: number[];
+        predicted: number[];
+        dates: string[];
+    };
+    is_new_model?: boolean;
+};
 
 export default function Predictions() {
     const [symbol, setSymbol] = useState("");
     const [days, setDays] = useState(7);
-    const [data, setData] = useState<Record<string, number> | null>(null);
+    const [data, setData] = useState<PredictionData | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
 
@@ -69,20 +85,36 @@ export default function Predictions() {
         }
     };
 
-    const chartData = data
-        ? {
-              labels: Object.keys(data.predictions),
-              datasets: [
-                  {
-                      label: `Predicted Prices for ${data.symbol}`,
-                      data: Object.values(data.predictions),
-                      borderColor: "rgba(75, 192, 192, 1)",
-                      backgroundColor: "rgba(75, 192, 192, 0.2)",
-                      tension: 0.3,
-                  },
-              ],
-          }
-        : null;
+    const trainingChartData = data?.training_data ? {
+        labels: data.training_data.dates,
+        datasets: [
+            {
+                label: 'Actual Prices',
+                data: data.training_data.actual,
+                borderColor: 'rgb(255, 99, 132)',
+                backgroundColor: 'rgba(255, 99, 132, 0.5)',
+            },
+            {
+                label: 'Predicted Prices',
+                data: data.training_data.predicted,
+                borderColor: 'rgb(53, 162, 235)',
+                backgroundColor: 'rgba(53, 162, 235, 0.5)',
+            },
+        ],
+    } : null;
+
+    const predictionChartData = data?.predictions ? {
+        labels: Object.keys(data.predictions),
+        datasets: [
+            {
+                label: `Future Predictions for ${data.symbol}`,
+                data: Object.values(data.predictions),
+                borderColor: "rgba(75, 192, 192, 1)",
+                backgroundColor: "rgba(75, 192, 192, 0.2)",
+                tension: 0.3,
+            },
+        ],
+    } : null;
 
     return (
         <main className="flex min-h-screen flex-col items-center justify-center p-10 space-y-10">
@@ -114,15 +146,32 @@ export default function Predictions() {
                     </button>
                 </div>
 
-                {/* Results Section */}
-                <div className="p-6 bg-gray-100 dark:bg-neutral-800 rounded-lg shadow-md">
+                 {/* Results Section */}
+                 <div className="p-6 bg-gray-100 dark:bg-neutral-800 rounded-lg shadow-md space-y-4">
                     {loading && <p className="text-center text-gray-500">Loading...</p>}
                     {error && <p className="text-red-500 text-center">{error}</p>}
-                    {chartData && (
+                    
+                    {data?.is_new_model && trainingChartData && (
                         <div className="mt-4">
-                            <Line data={chartData} />
+                            <h3 className="text-lg font-semibold mb-2">Model Training Results</h3>
+                            <Line data={trainingChartData} />
+                            <div className="mt-4 text-sm">
+                                <p>Model Type: {data.model}</p>
+                                <p>RMSE: {data.metrics.rmse.toFixed(2)}</p>
+                                <p>MAE: {data.metrics.mae.toFixed(2)}</p>
+                            </div>
                         </div>
                     )}
+
+                    {predictionChartData && (
+                        <div className="mt-4">
+                            <h3 className="text-lg font-semibold mb-2">
+                                {data?.is_new_model ? "New Model Predictions" : "Existing Model Predictions"}
+                            </h3>
+                            <Line data={predictionChartData} />
+                        </div>
+                    )}
+
                     {!loading && !data && !error && (
                         <p className="text-center text-gray-500">
                             Enter a stock ticker and the number of days to see predictions.

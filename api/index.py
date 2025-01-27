@@ -5,10 +5,11 @@ import pandas as pd
 import numpy as np
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error
-from datetime import timedelta
+from datetime import datetime, timedelta
 from api.models import StockPredictor
 from api.database import insert_metrics, fetch_metrics, save_historical_data
 from initialize_db import initialize_db
+# export PYTHONPATH=$PYTHONPATH:/Users/alyssaditroia/Desktop/Stock_Analysis/Stock_Analysis_ML
 
 # Run: uvicorn index:app --host 0.0.0.0 --port 8000 --reload
 app = FastAPI(docs_url="/api/py/docs", openapi_url="/api/py/openapi.json")
@@ -27,32 +28,54 @@ async def app_lifespan(app):
     initialize_db()
     yield
 
+def get_date_range(period: str):
+    end_date = datetime.today()
+    if period.endswith('d'):
+        days = int(period[:-1])
+        start_date = end_date - timedelta(days=days)
+    elif period.endswith('mo'):
+        months = int(period[:-2])
+        start_date = end_date - timedelta(weeks=4*months)
+    elif period.endswith('y'):
+        years = int(period[:-1])
+        start_date = end_date - timedelta(days=365*years)
+    else:
+        start_date = end_date - timedelta(days=365*2)  # Default to 2 years
+    return start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")
+
 # Test: curl -v http://0.0.0.0:8000/api/py/stock/VOO
 # Getting stock data
 @app.get("/api/py/stock/{symbol}")
-def get_stock_data(symbol: str):
-    stock = yf.Ticker(symbol)
-    data = stock.history(period="1mo").dropna()
-    if data.empty:
-        raise HTTPException(status_code=404, detail="Stock data not found")
-        # Convert to the required format for the database
+def get_stock_data(symbol: str, period: str = "1mo"):
+    try:
+        # Try to get existing data first
+        start_date, end_date = get_date_range(period)
+        db_data = fetch_historical_data(symbol, start_date, end_date)
+        
+        if db_data:
+            return db_data
+            
+        # If not found, fetch from yfinance
+        stock = yf.Ticker(symbol)
+        data = stock.history(period=period).dropna()
+        if data.empty:
+            raise HTTPException(status_code=404, detail="Stock data not found")
 
-    data = data[["Open", "High", "Low", "Close", "Volume"]]
-    # Format data for saving to the database
-    formatted_data = {
-        row.name.strftime("%Y-%m-%d"): {
-            "Open": row["Open"],
-            "High": row["High"],
-            "Low": row["Low"],
-            "Close": row["Close"],
-            "Volume": row["Volume"],
+        formatted_data = {
+            row.name.strftime("%Y-%m-%d"): {
+                "Open": row["Open"],
+                "High": row["High"],
+                "Low": row["Low"],
+                "Close": row["Close"],
+                "Volume": row["Volume"],
+            }
+            for _, row in data.iterrows()
         }
-        for _, row in data.iterrows()
-    }
-    # Save to the database
-    save_historical_data(symbol, formatted_data)
+        save_historical_data(symbol, formatted_data)
+        return formatted_data
 
-    return formatted_data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
 
 # Predicting stock prices
 @app.get("/api/py/stock/predict/{symbol}")
@@ -102,6 +125,12 @@ def predict_stock_price(symbol: str, days: int = 7, period: str = "3mo"):
             "period": period,
             "metrics": metrics,
             "predictions": future_predictions,
+            "is_new_model": True,  # Set this flag when new model is trained
+            "training_data": {
+                "actual": y_test.tolist(),
+                "predicted": y_pred.tolist(),
+                "dates": data.index[train_size:].strftime("%Y-%m-%d").tolist()
+            }
         }
 
     except Exception as e:
