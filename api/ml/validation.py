@@ -6,8 +6,14 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 from pathlib import Path
 from datetime import datetime, timedelta
+from Stock_Analysis_ML.api.database import ModelStore
 from Stock_Analysis_ML.api.ml.metrics import StockModelTrainer
 from config import config
+import sys
+from pathlib import Path
+
+project_root = Path(__file__).parent.parent.parent
+sys.path.append(str(project_root))
 
 class ModelValidator:
     def __init__(self, symbol: str):

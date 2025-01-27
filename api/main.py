@@ -3,6 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from api.routes import stocks, metrics
 from config import config
 
+# uvicorn api.main:app --reload
+
 app = FastAPI(
     title="Stock Analysis API",
     docs_url="/api/py/docs",

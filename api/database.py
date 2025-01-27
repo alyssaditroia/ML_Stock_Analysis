@@ -76,6 +76,7 @@ class DatabaseManager:
                   metrics["mae"], datetime.now()))
             conn.commit()
 
+
 class ModelStore:
     @staticmethod
     def save_model(symbol: str, model):

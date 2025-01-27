@@ -20,7 +20,7 @@ def cli():
     pass
 
 @cli.command()
-@click.argument('symbol')
+@click.argument('symbol', help="Enter Stock Ticker e.g. VOO\nUsage example: python cli.py validate-model VOO")
 def validate_model(symbol: str):
     """Run walk-forward validation on the model"""
     db = DatabaseManager()
@@ -38,7 +38,7 @@ def validate_model(symbol: str):
 
 @cli.command()
 @click.argument('symbol')
-@click.option('--start', default='2023-01-01', help='Start date for backtest')
+@click.option('--start', default='2023-01-01', help='Start date for backtest\nFormat: yyyy-mm-dd')
 def backtest(symbol: str, start: str):
     """Backtest the model from specific start date"""
     db = DatabaseManager()
@@ -73,7 +73,7 @@ def benchmark(symbol: str):
 
 @cli.command()
 @click.argument('symbol')
-def feature_importance(symbol: str):
+def feat_im(symbol: str):
     """Plot feature importance for trained model"""
     db = DatabaseManager()
     data = db.fetch_historical_data(symbol)
