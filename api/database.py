@@ -75,7 +75,7 @@ def fetch_metrics() -> List[Dict[str, Any]]:
         for row in rows
     ]
 
-# Get historical data from db
+# Get historical stock data from db
 def fetch_historical_data(symbol: str, start_date: str, end_date: str):
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
@@ -126,3 +126,16 @@ def fetch_predictions(symbol: str) -> List[Dict[str, Any]]:
         }
         for row in rows
     ]
+
+# Get the latest data for a symbol
+def get_latest_date(symbol: str) -> str:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT MAX(date) 
+        FROM historical_data 
+        WHERE symbol = ?
+    """, (symbol,))
+    result = cursor.fetchone()[0]
+    conn.close()
+    return result or ""

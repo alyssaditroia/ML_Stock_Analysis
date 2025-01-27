@@ -7,10 +7,12 @@ from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error
 from datetime import datetime, timedelta
 from api.models import StockPredictor
-from api.database import insert_metrics, fetch_metrics, save_historical_data
+from Stock_Analysis_ML.api.database import get_connection
+from api.database import get_latest_date, insert_metrics, fetch_metrics, save_historical_data
 from initialize_db import initialize_db
+from datetime import datetime, timedelta
 # export PYTHONPATH=$PYTHONPATH:/Users/alyssaditroia/Desktop/Stock_Analysis/Stock_Analysis_ML
-
+TRAINING_PERIOD_DAYS = 3 * 365
 # Run: uvicorn index:app --host 0.0.0.0 --port 8000 --reload
 app = FastAPI(docs_url="/api/py/docs", openapi_url="/api/py/openapi.json")
 
@@ -28,39 +30,32 @@ async def app_lifespan(app):
     initialize_db()
     yield
 
-def get_date_range(period: str):
-    end_date = datetime.today()
-    if period.endswith('d'):
-        days = int(period[:-1])
-        start_date = end_date - timedelta(days=days)
-    elif period.endswith('mo'):
-        months = int(period[:-2])
-        start_date = end_date - timedelta(weeks=4*months)
-    elif period.endswith('y'):
-        years = int(period[:-1])
-        start_date = end_date - timedelta(days=365*years)
-    else:
-        start_date = end_date - timedelta(days=365*2)  # Default to 2 years
-    return start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")
 
 # Test: curl -v http://0.0.0.0:8000/api/py/stock/VOO
 # Getting stock data
 @app.get("/api/py/stock/{symbol}")
-def get_stock_data(symbol: str, period: str = "1mo"):
+def get_stock_data(symbol: str):
     try:
-        # Try to get existing data first
-        start_date, end_date = get_date_range(period)
-        db_data = fetch_historical_data(symbol, start_date, end_date)
+        # Check existing data
+        latest_date = get_latest_date(symbol)
         
-        if db_data:
-            return db_data
+        if latest_date:
+            # Return existing data
+            return fetch_historical_data(symbol, "", "")
             
-        # If not found, fetch from yfinance
+        # Fetch initial 3 years of data if none exists
+        end_date = datetime.today()
+        start_date = end_date - timedelta(days=TRAINING_PERIOD_DAYS)
+        
         stock = yf.Ticker(symbol)
-        data = stock.history(period=period).dropna()
+        data = stock.history(
+            start=start_date.strftime("%Y-%m-%d"),
+            end=end_date.strftime("%Y-%m-%d")
+        ).dropna()
+        
         if data.empty:
             raise HTTPException(status_code=404, detail="Stock data not found")
-
+            
         formatted_data = {
             row.name.strftime("%Y-%m-%d"): {
                 "Open": row["Open"],
@@ -77,60 +72,50 @@ def get_stock_data(symbol: str, period: str = "1mo"):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
 
+
+
 # Predicting stock prices
 @app.get("/api/py/stock/predict/{symbol}")
-def predict_stock_price(symbol: str, days: int = 7, period: str = "3mo"):
-    if days <= 0:
-        raise HTTPException(status_code=400, detail="Days parameter must be greater than 0.")
-
+def predict_stock_price(symbol: str, days: int = 7):
     try:
-        stock = yf.Ticker(symbol)
-        data = stock.history(period=period).dropna()  # Drop missing values
-        if data.empty:
-            raise HTTPException(status_code=404, detail="Stock data not found")
-
-        # Prepare data
-        X, y = StockPredictor.prepare_data(data)
-
-        # Train-test split
-        train_size = int(len(X) * 0.8)
-        X_train, X_test = X[:train_size], X[train_size:]
-        y_train, y_test = y[:train_size], y[train_size:]
-
-        # Initialize and train the model
-        predictor = StockPredictor(model_type="Linear Regression")
-        predictor.train(X_train, y_train)
-
-        # Evaluate the model
-        metrics = predictor.evaluate(X_test, y_test)
-
-        # Save metrics to the database
-        insert_metrics(
-            model_type=predictor.model_type,
-            period=period,
-            rmse=round(metrics["rmse"], 2),
-            mae=round(metrics["mae"], 2),
-            mse=round(metrics["mse"], 2),
-            accuracy=None  # Add accuracy if available
-        )
-
-        # Make future predictions
-        last_day = X[-1][0]
+        # Get all historical data from DB
+        historical_data = fetch_historical_data(symbol, "", "")
+        
+        if not historical_data or len(historical_data) < 250:
+            raise HTTPException(status_code=404, detail="Insufficient historical data")
+            
+        # Convert to pandas DataFrame
+        dates = list(historical_data.keys())
+        data = pd.DataFrame({
+            'Open': [v['Open'] for v in historical_data.values()],
+            'High': [v['High'] for v in historical_data.values()],
+            'Low': [v['Low'] for v in historical_data.values()],
+            'Close': [v['Close'] for v in historical_data.values()],
+            'Volume': [v['Volume'] for v in historical_data.values()],
+        }, index=pd.to_datetime(dates))
+        
+        # Check for existing model
+        predictor = StockPredictor.load_model(symbol)
+        is_new_model = False
+        
+        if not predictor:
+            # Train new model if none exists
+            X, y = StockPredictor.prepare_data(data)
+            predictor = StockPredictor(model_type="Linear Regression")
+            predictor.train(X, y)
+            predictor.save_model(symbol)
+            is_new_model = True
+            
+        # Generate predictions
+        last_day = data.index[-1].to_pydatetime()
         future_predictions = predictor.future_predictions(last_day, days)
-
-        # Response
+        
         return {
             "symbol": symbol,
-            "model": predictor.model_type,
-            "period": period,
-            "metrics": metrics,
+            "is_new_model": is_new_model,
             "predictions": future_predictions,
-            "is_new_model": True,  # Set this flag when new model is trained
-            "training_data": {
-                "actual": y_test.tolist(),
-                "predicted": y_pred.tolist(),
-                "dates": data.index[train_size:].strftime("%Y-%m-%d").tolist()
-            }
+            "last_trained": predictor.last_trained if not is_new_model else datetime.now().isoformat(),
+            "data_points": len(data)
         }
 
     except Exception as e:
