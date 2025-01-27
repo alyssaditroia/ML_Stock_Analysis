@@ -9,6 +9,11 @@ import pandas as pd
 
 # run: python cli.py fetch-data VOO 
 # python cli.py train-model VOO
+# python cli.py validate-model VOO
+# python cli.py backtest VOO
+# python cli.py backtest VOO --start=2023-01-01
+# python cli.py benchmark VOO
+# python cli.py feat-im VOO
 
 @click.group()
 def cli():
