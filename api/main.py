@@ -22,7 +22,8 @@ app.add_middleware(
 app.include_router(stocks.router)
 app.include_router(metrics.router)
 
-@app.on_event("startup")
+@app.get("/startup")
 async def startup_event():
     # Initialize database and directories
     config.model_store_path.mkdir(exist_ok=True, parents=True)
+    return {"message": "Startup tasks completed"}

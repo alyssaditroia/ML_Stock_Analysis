@@ -1,12 +1,13 @@
+from config import config
 import click
 from datetime import datetime, timedelta
 import yfinance as yf
 from Stock_Analysis_ML.api.ml.validation import ModelValidator
-from api.database import DatabaseManager, ModelStore
-from api.ml.training import StockModelTrainer
-from config import config
+from Stock_Analysis_ML.api.database import DatabaseManager, ModelStore
+from Stock_Analysis_ML.api.ml.training import StockModelTrainer
 import pandas as pd
 
+# export PYTHONPATH=$PYTHONPATH:/Users/alyssaditroia/Desktop/Stock_Analysis
 # run: python cli.py fetch-data VOO 
 # python cli.py train-model VOO
 # python cli.py validate-model VOO
@@ -20,7 +21,7 @@ def cli():
     pass
 
 @cli.command()
-@click.argument('symbol', help="Enter Stock Ticker e.g. VOO\nUsage example: python cli.py validate-model VOO")
+@click.argument('symbol')
 def validate_model(symbol: str):
     """Run walk-forward validation on the model"""
     db = DatabaseManager()

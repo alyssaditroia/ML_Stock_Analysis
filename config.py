@@ -1,6 +1,6 @@
 import pathlib
 
-BASE_DIR = pathlib.Path(__file__).parent.parent
+BASE_DIR = pathlib.Path(__file__).resolve().parent.parent
 DB_PATH = BASE_DIR / "db/ml_dashboard.db"
 MODEL_STORE_PATH = BASE_DIR / "models"
 TRAINING_PERIOD_DAYS = 3 * 365

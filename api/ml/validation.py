@@ -46,11 +46,13 @@ class ModelValidator:
             # Train model
             trainer = StockModelTrainer(self.symbol)
             X_train, y_train = trainer.prepare_data(train)
+            print(f"X_train shape: {X_train.shape}, y_train shape: {y_train.shape}")  # Debug print
             model = RandomForestRegressor(n_estimators=100, max_depth=10)
             model.fit(X_train, y_train)
             
             # Predict
             X_test, y_test = trainer.prepare_data(test)
+            print(f"X_test shape: {X_test.shape}, y_test shape: {y_test.shape}")  # Debug print
             pred = model.predict(X_test)
             
             # Store results

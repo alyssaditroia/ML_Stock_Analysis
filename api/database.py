@@ -65,16 +65,22 @@ class DatabaseManager:
 
     @staticmethod
     def save_model_metrics(symbol: str, metrics: Dict):
+        required_keys = {"model_type", "mse", "rmse", "mae"}
+        missing_keys = required_keys - metrics.keys()
+        if missing_keys:
+            raise ValueError(f"Missing required metric keys: {missing_keys}")
+        
         with get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                INSERT INTO metrics 
+                INSERT OR REPLACE INTO metrics 
                 (symbol, model_type, mse, rmse, mae, created_at)
                 VALUES (?, ?, ?, ?, ?, ?)
             """, (symbol, metrics.get("model_type"), 
-                  metrics["mse"], metrics["rmse"], 
-                  metrics["mae"], datetime.now()))
+                metrics["mse"], metrics["rmse"], 
+                metrics["mae"], datetime.now()))
             conn.commit()
+            print(f"Metrics for {symbol} saved: {metrics}")
 
 
 class ModelStore:
